@@ -47,6 +47,10 @@ build_exe.cmd
 
 一键生成 `dist\model_manager.exe` 与 `dist\claude_switcher.exe` 并复制到桌面（无控制台窗口）。注意 frozen 下 `sys.executable` 指向 exe 自己，脚本内部通过 `_host_python()` 回落到系统 `C:\Python313\python.exe` 来跑 `install_free_llms.py`。
 
+## CI 自动构建
+
+仓库含 `.github/workflows/build-exe.yml`：push 到 `main` 触发 `windows-latest` 自动打包，产物作为 **Actions Artifact** 可直接下载；发布 **GitHub Release** 时，两个 exe 会自动挂到该 Release 附件上（无需本机出包）。
+
 ## 候选模型从哪来
 
 「新建模型」的候选来自两家公开、免 key 的模型目录：
