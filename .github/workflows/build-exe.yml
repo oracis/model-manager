@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --onefile --windowed `
             --name model_manager `
-            --icon mm.ico `
+            --icon "${{ github.workspace }}\mm.ico" `
             --distpath dist `
             --workpath build_tmp `
             --specpath build_tmp `
@@ -46,7 +46,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --onefile --windowed `
             --name claude_switcher `
-            --icon mm.ico `
+            --icon "${{ github.workspace }}\mm.ico" `
             --distpath dist `
             --workpath build_tmp `
             --specpath build_tmp `
