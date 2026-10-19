@@ -1,0 +1,16 @@
+# 默认忽略 .local/bin 下的所有内容（里面混着很多无关二进制）
+*
+
+# 只放行这套「模型管理器 / 免费 LLM 工具」的源码
+!model_manager.pyw
+!claude_model_switcher.pyw
+!free_llm_panel.pyw
+!zen_bridge_supervisor.pyw
+!build_exe.cmd
+!mm.ico
+!README.md
+!.gitignore
+
+# 构建产物不入库（可用 build_exe.cmd 重新生成）
+dist/
+build_tmp/
