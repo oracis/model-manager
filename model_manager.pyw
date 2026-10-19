@@ -113,6 +113,7 @@ _EN = {
     "上下文": "Context",
     "已装": "Installed",
     "首字实测": "1st-token",
+    "超时/挂": "Timeout/Down",
     "正在拉 Kilo / Zen 目录…": "Fetching Kilo / Zen catalog…",
     "共 %d 个": "%d found",
     "没扫到（网络问题？可手填）": "Nothing found (network issue? type manually)",
@@ -823,6 +824,9 @@ def bench_candidates(cands, jobs=6, timeout=20, progress=None):
                 progress(i + 1, total, mid, ttft)
     save_bench_cache(cache)
     return cache
+
+
+def _auth_token():
     """从现有 profile 里借一个 ANTHROPIC_AUTH_TOKEN。
 
     这个 token 只对本地 ccproxy 生效（ccproxy 用自己的 key 打上游），
@@ -832,10 +836,11 @@ def bench_candidates(cands, jobs=6, timeout=20, progress=None):
         if not fn.endswith(".json"):
             continue
         p = read_json(os.path.join(PROFILES_DIR, fn))
-        t = ((p or {}).get("env") or {}).get("ANTHROPIC_AUTH_TOKEN")
-        if t:
-            return t
+        tok = ((p or {}).get("env") or {}).get("ANTHROPIC_AUTH_TOKEN")
+        if tok:
+            return tok
     return "anonymous"
+
 
 # name=显示名, profile=profiles 下文件名(无后缀), port=本地 ccproxy 端口(None=直连),
 # args=ccproxy 启动参数, bridge=是否需要先拉起 zen_bridge
