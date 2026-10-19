@@ -23,14 +23,20 @@ os.remove 直接干掉，不留 backup（免费模型要么不好用、要么已
 以 profiles 目录真实存在的 profile 为准，MODELS 只提供显示名和启动参数。
 MODELS 里有登记但 profile 没了的（如 glm4），按钮隐藏并在列表底部灰字提示；
 profiles 里多出来的（外部工具装的）会自动补进两个列表，能切也能删。
+
+国际化（i18n）：中文即源语言，_EN 放英文翻译表；自动检测系统 UI 语言，右上角
+「语言」下拉手动改并写盘记住。改语言后重启本进程让所有文案立即生效。
 """
+import ctypes
 import http.client
 import json
+import locale
 import os
 import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -44,6 +50,221 @@ CC = r"C:\Users\DELL\.workbuddy\skills\claude-code-third-party-model\scripts\ccp
 ZB = r"C:\Users\DELL\.workbuddy\skills\claude-code-third-party-model\scripts\zen_bridge.py"
 ZB_PORT = 8787
 ZB_SDK_PORT = 41234
+
+BG = "#ffffff"
+FG = "#1f2328"
+SUB = "#6a737d"
+ACCENT = "#2f6fed"
+
+
+# ===========================================================================
+# 国际化（i18n）
+#   中文是源语言：_EN 只放英文翻译表，zh 直接用原文（key 即文案）。
+#   自动检测系统 UI 语言；主窗口右上角「语言」下拉可手动改，选择写盘记住。
+# ===========================================================================
+LANG_FILE = os.path.join(HOME, ".workbuddy", "claude_switcher.lang")
+LANG_NAMES = {"zh": "中文", "en": "English"}
+LANG_ORDER = ["zh", "en"]
+
+_EN = {
+    "语言": "Language",
+    "Claude 模型切换器": "Claude Model Switcher",
+    "WorkBuddy 免费模型": "WorkBuddy Free Models",
+    "Claude Code 模型": "Claude Code Models",
+    "模型 ID": "Model ID",
+    "来源": "Source",
+    "方式": "Mode",
+    "#": "#",
+    "重新择优": "Repick",
+    "先看一眼": "Preview",
+    "快速体检": "Health Check",
+    "撤销改动": "Undo",
+    "就绪": "Ready",
+    "运行中…": "Running…",
+    "从未": "Never",
+    "未知": "Unknown",
+    "点哪个模型，就切到哪个。切完重启 Claude Code 即可":
+        "Click a model to switch to it. Restart Claude Code after switching.",
+    "删除模型（免费模型真删·付费归档可恢复）":
+        "Delete model (free: hard delete · paid: archived & recoverable)",
+    "刷新列表": "Refresh",
+    "＋ 新建模型": "+ New Model",
+    "删除所选模型": "Delete Selected",
+    "新建模型（Claude Code）": "New Model (Claude Code)",
+    "从可用免费模型里选（点一行自动填到下面）":
+        "Pick from available free models (click a row to fill it below)",
+    "刷新目录": "Refresh List",
+    "测速排序": "Benchmark Sort",
+    "「测速排序」逐个量首字耗时（约半分钟），灰=未测 红=挂":
+        "\"Benchmark Sort\" measures first-token latency per model (~30s). Gray=untested, Red=down",
+    "上下文": "Context",
+    "已装": "Installed",
+    "首字实测": "1st-token",
+    "超时/挂": "Timeout/Down",
+    "正在拉 Kilo / Zen 目录…": "Fetching Kilo / Zen catalog…",
+    "共 %d 个": "%d found",
+    "没扫到（网络问题？可手填）": "Nothing found (network issue? type manually)",
+    "目录还是空的，先「刷新目录」": "Catalog is empty; click \"Refresh List\" first",
+    "测速完成 %d/%d 有响应，已按快慢排": "Benchmark done: %d/%d responded, sorted by speed",
+    "扫描中": "Scanning",
+    "测速中 %d/%d": "Benchmarking %d/%d",
+    "模型 ID（也可以直接手写）": "Model ID (or type manually)",
+    "→ 走 Kilo 网关直连（ID 带斜杠）": "→ Kilo gateway direct (ID has a slash)",
+    "→ 走 Zen 免费，经本地桥接 8787": "→ Zen free, via local bridge 8787",
+    "本地代理端口": "Local proxy port",
+    "（自动挑一个没占用的）": "(auto-picks a free one)",
+    "取消": "Cancel",
+    "创建并切换": "Create & Switch",
+    "缺模型 ID": "Missing Model ID",
+    "先填模型 ID": "Fill in the model ID first",
+    "端口不对": "Invalid port",
+    "端口要填数字": "Port must be a number",
+    "创建失败": "Creation failed",
+    "没有选中": "Nothing selected",
+    "先在下拉框里选一个要删除的模型": "Select a model to delete from the dropdown first",
+    "读不了这个 profile": "Cannot read this profile",
+    "将【永久删除】免费模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n免费模型直接真删，不留 backup。\n确定删除？":
+        "Will PERMANENTLY delete free model \"%s\"\nprofile file: %s\nupstream model ID: %s\n\nFree models are hard-deleted (no backup).\nDelete?",
+    "将删除模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n操作 = 把该 profile 移入\n~/.claude/backups/deleted/\n（不是硬删，需要时可捡回）\n\n确定删除？":
+        "Will delete model \"%s\"\nprofile file: %s\nupstream model ID: %s\n\nAction = move the profile to\n~/.claude/backups/deleted/\n(not a hard delete; recoverable)\n\nDelete?",
+    "确认删除": "Confirm Deletion",
+    "删除失败": "Deletion failed",
+    "切换器出错": "Switcher error",
+    "「%s」已永久删除（免费模型，无 backup）。": "\"%s\" permanently deleted (free model, no backup).",
+    "「%s」已移除。\n归档到：%s（可恢复）": "\"%s\" removed.\nArchived to: %s (recoverable)",
+    "已删除": "Deleted",
+    "重启 Claude Code 后，切换器列表不再显示它。":
+        "After restarting Claude Code, the switcher list won't show it.",
+    "\n\n注意：这是当前正在用的模型。settings.json 未改动，但已无 profile 与它对应，建议再点一个别的模型。":
+        "\n\nNote: this is the model currently in use. settings.json is unchanged, but no profile matches it now; pick another model.",
+    "当前：%s\n切换后重启 Claude Code；想保留上下文重启时加 --continue":
+        "Current: %s\nRestart Claude Code after switching; use --continue to keep context",
+    "正在拉起 Zen 桥接（约 30 秒，含 opencode serve 冷启动）...":
+        "Starting Zen bridge (~30s, includes opencode serve cold start)...",
+    "正在切换...": "Switching...",
+    "该模型已删除": "Model deleted",
+    "「%s」的 profile 已被删除。\n点下方「刷新列表」或重启本工具。":
+        "\"%s\"'s profile was deleted.\nClick \"Refresh\" below or restart this tool.",
+    "已自动连上 %s（%s）": "Auto-connected to %s (%s)",
+    "自动连接失败：%s": "Auto-connect failed: %s",
+    "\n\n桥接已就绪，WorkBuddy 侧也能用同一个模型：\n模型列表选 vendor=opencode 的 %s":
+        "\n\nBridge ready; WorkBuddy can use the same model:\npick vendor=opencode %s in the model list",
+    "已切换": "Switched",
+    "部分失败": "Partial failure",
+    "已切换到：%s\n%s%s\n\n重启 Claude Code 后生效。\n想接着之前的对话继续：重启时用 claude --continue\n（换模型不会丢会话，历史都在 ~/.claude/projects/）":
+        "Switched to: %s\n%s%s\n\nTakes effect after restarting Claude Code.\nTo continue the conversation: restart with claude --continue\n(switching models won't lose the session; history is in ~/.claude/projects)",
+    "未安装、已从列表隐藏：%s": "Not installed, hidden from list: %s",
+    "（直连，无需代理）": "(Direct, no proxy)",
+    "代理已在运行": "Proxy already running",
+    "本地代理 %d 未运行，且该模型无登记启动参数，未自动拉起；请先手动启动对应代理":
+        "Local proxy %d not running and this model has no registered launch args; not auto-started. Start the proxy manually first",
+    "已启动代理": "Proxy started",
+    "代理启动超时，见 ~/.claude/ccproxy-%d.log": "Proxy start timed out; see ~/.claude/ccproxy-%d.log",
+    "桥接已在运行": "Bridge already running",
+    "桥接启动超时，见 ~/.claude/zen-bridge.log": "Bridge start timed out; see ~/.claude/zen-bridge.log",
+    "桥接已启动": "Bridge started",
+    "桥接端口已开但健康检查未通过，见 ~/.claude/zen-bridge.log":
+        "Bridge port open but health check failed; see ~/.claude/zen-bridge.log",
+    "失败：%s": "Failed: %s",
+    "模型 ID 里没有可用字符": "No usable characters in model ID",
+    "已经有同名 profile：%s.json": "Profile with same name already exists: %s.json",
+    "由模型管理器新建（%s）": "Created by Model Manager (%s)",
+    "Zen 桥接": "Zen bridge",
+    "Kilo 直连": "Kilo direct",
+    # 模型显示名里的注解
+    "（免费·Zen）": "(Free·Zen)",
+    "（免费·Zen·1M·实测最快）": "(Free·Zen·1M·Fastest)",
+    "（免费·Zen·256k·输出64k）": "(Free·Zen·256k·out 64k)",
+    "（免费·Zen·1M）": "(Free·Zen·1M)",
+    "（免费·Zen·200k）": "(Free·Zen·200k)",
+    "（免费）": "(Free)",
+    "（免费·可看图）": "(Free·can see images)",
+    "（免费·agent首选）": "(Free·agent pick)",
+    "（付费）": "(Paid)",
+    "（免费·稳定）": "(Free·stable)",
+    "（免费+读图）": "(Free+Vision)",
+    # 删除下拉短标签
+    "DS V4.1 Flash 免费·Zen": "DS V4.1 Flash Free·Zen",
+    "👑 Space Bunny 免费·最快": "👑 Space Bunny Free·Fastest",
+    "LL Alpha 免费·256k": "LL Alpha Free·256k",
+    "Nemotron VL 免费·1M": "Nemotron VL Free·1M",
+    "LongCat 免费·1M": "LongCat Free·1M",
+    "MiMo V2.6 免费": "MiMo V2.6 Free",
+    "Big Pickle 免费": "Big Pickle Free",
+    "DeepSeek-V4 付费": "DeepSeek-V4 Paid",
+    "GLM-4-Flash 免费": "GLM-4-Flash Free",
+    "GLM-4-Flash 免费+读图": "GLM-4-Flash Free+Vision",
+    "GLM-4.1V 思考 免费": "GLM-4.1V Think Free",
+    "GLM-4.6V 免费": "GLM-4.6V Free",
+    "Kilo 文本 免费+读图": "Kilo Text Free+Vision",
+    "Kilo LFM2.5 免费": "Kilo LFM2.5 Free",
+    "读图 Vision 免费": "Vision Free",
+    "Kilo 文本 + 读图桥接（免费）": "Kilo Text + Vision Bridge (Free)",
+    "读图 Vision（免费·可看图）": "Vision (Free·can see images)",
+    "Kilo 快稳 LFM2.5（免费·agent首选）": "Kilo Fast LFM2.5 (Free·agent pick)",
+    "GLM-4-Flash + 读图桥接（免费）": "GLM-4-Flash + Vision Bridge (Free)",
+    "DeepSeek V4.1 Flash（免费·Zen）": "DeepSeek V4.1 Flash (Free·Zen)",
+    "👑 Space Bunny Free（免费·Zen·1M·实测最快）": "👑 Space Bunny Free (Free·Zen·1M·Fastest)",
+    "LL Alpha Free（免费·Zen·256k·输出64k）": "LL Alpha Free (Free·Zen·256k·out 64k)",
+    "Nemotron 3.5 Super-VL（免费·Zen·1M）": "Nemotron 3.5 Super-VL (Free·Zen·1M)",
+    "LongCat 2.5 Preview（免费·Zen·1M）": "LongCat 2.5 Preview (Free·Zen·1M)",
+    "MiMo V2.6 Flash（免费·Zen·200k）": "MiMo V2.6 Flash (Free·Zen·200k)",
+    "Big Pickle（免费·Zen·200k）": "Big Pickle (Free·Zen·200k)",
+    "DeepSeek-V4 (付费)": "DeepSeek-V4 (Paid)",
+    "GLM-4-Flash（免费·稳定）": "GLM-4-Flash (Free·stable)",
+}
+
+
+def _detect_lang():
+    """检测系统 UI 语言：Windows 读 GetUserDefaultUILanguage，其他回退 locale。"""
+    try:
+        lid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        if (lid & 0x3FF) == 0x04:          # 主语言 0x04 = 中文（各变体）
+            return "zh"
+    except Exception:
+        pass
+    try:
+        loc = (locale.getdefaultlocale() or ("",))[0] or ""
+        if loc.lower().startswith("zh"):
+            return "zh"
+    except Exception:
+        pass
+    return "en"
+
+
+def load_lang():
+    try:
+        with open(LANG_FILE, encoding="utf-8") as f:
+            v = f.read().strip()
+        return v if v in LANG_ORDER else None
+    except Exception:
+        return None
+
+
+def save_lang(code):
+    try:
+        os.makedirs(os.path.dirname(LANG_FILE), exist_ok=True)
+        with open(LANG_FILE, "w", encoding="utf-8") as f:
+            f.write(code)
+    except Exception:
+        pass
+
+
+_current_lang = load_lang() or _detect_lang()
+
+
+def t(key, *args):
+    """取当前语言的文案。中文即源语言（key 本身）；英文查 _EN 表，查不到回落 key。"""
+    if not key:
+        return key
+    d = _EN if _current_lang == "en" else None
+    s = d.get(key, key) if d is not None else key
+    if args:
+        try:
+            return s % args
+        except Exception:
+            return s
+    return s
 
 
 def read_json(path):
@@ -210,36 +431,36 @@ def bench_candidates(cands, jobs=6, timeout=20, progress=None):
 # name=显示名, profile=profiles 下文件名(无后缀), port=本地 ccproxy 端口(None=直连),
 # args=ccproxy 启动参数, bridge=是否需要先拉起 zen_bridge
 MODELS = [
-    ("DeepSeek V4.1 Flash（免费·Zen）", "zen-ds-flash", 3462,
+    (t("DeepSeek V4.1 Flash（免费·Zen）"), "zen-ds-flash", 3462,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model deepseek-v4.1-flash-free --key anonymous", True),
-    ("👑 Space Bunny Free（免费·Zen·1M·实测最快）", "zen-space-bunny", 3463,
+    (t("👑 Space Bunny Free（免费·Zen·1M·实测最快）"), "zen-space-bunny", 3463,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model space-bunny-free --key anonymous", True),
-    ("LL Alpha Free（免费·Zen·256k·输出64k）", "zen-ll-alpha", 3469,
+    (t("LL Alpha Free（免费·Zen·256k·输出64k）"), "zen-ll-alpha", 3469,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model ll-alpha-free --key anonymous", True),
-    ("Nemotron 3.5 Super-VL（免费·Zen·1M）", "zen-nemotron-vl", 3464,
+    (t("Nemotron 3.5 Super-VL（免费·Zen·1M）"), "zen-nemotron-vl", 3464,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model nemotron-3.5-super-vl-free --key anonymous", True),
-    ("LongCat 2.5 Preview（免费·Zen·1M）", "zen-longcat", 3465,
+    (t("LongCat 2.5 Preview（免费·Zen·1M）"), "zen-longcat", 3465,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model longcat-2.5-preview-free --key anonymous", True),
-    ("MiMo V2.6 Flash（免费·Zen·200k）", "zen-mimo", 3467,
+    (t("MiMo V2.6 Flash（免费·Zen·200k）"), "zen-mimo", 3467,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model mimo-v2.6-flash-free --key anonymous", True),
-    ("Big Pickle（免费·Zen·200k）", "zen-big-pickle", 3468,
+    (t("Big Pickle（免费·Zen·200k）"), "zen-big-pickle", 3468,
      "--upstream http://127.0.0.1:8787/v1/chat/completions "
      "--model big-pickle --key anonymous", True),
-    ("Kilo 文本 + 读图桥接（免费）", "kilo-bridge", 3457,
+    (t("Kilo 文本 + 读图桥接（免费）"), "kilo-bridge", 3457,
      "--upstream https://api.kilo.ai/api/gateway/v1/chat/completions --model kilo-auto/free --key anonymous", False),
-    ("读图 Vision（免费·可看图）", "vision", 3458,
+    (t("读图 Vision（免费·可看图）"), "vision", 3458,
      "--upstream https://api.kilo.ai/api/gateway/v1/chat/completions --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free --key anonymous", False),
-    ("Kilo 快稳 LFM2.5（免费·agent首选）", "kilo-fast", 3461,
+    (t("Kilo 快稳 LFM2.5（免费·agent首选）"), "kilo-fast", 3461,
      "--upstream https://api.kilo.ai/api/gateway/v1/chat/completions --model liquid/lfm-2.5-2.6b:free --key anonymous", False),
-    ("DeepSeek-V4 (付费)", "deepseek", None, "", False),
-    ("GLM-4-Flash（免费·稳定）", "glm4", None, "", False),
-    ("GLM-4-Flash + 读图桥接（免费）", "glm4-bridge", None, "", False),
+    (t("DeepSeek-V4 (付费)"), "deepseek", None, "", False),
+    (t("GLM-4-Flash（免费·稳定）"), "glm4", None, "", False),
+    (t("GLM-4-Flash + 读图桥接（免费）"), "glm4-bridge", None, "", False),
 ]
 
 DETACHED = 0x00000008  # DETACHED_PROCESS
@@ -252,21 +473,21 @@ PREFERRED_PROFILE = "zen-space-bunny"
 # 删除下拉框用的短标签（按钮显示名太长，Combobox 里放不下会被截断）：
 # 精简到「模型名 + 免费/付费」，一眼可辨又短。没列到的用 fallback 逻辑补。
 DEL_LABELS = {
-    "zen-ds-flash": "DS V4.1 Flash 免费·Zen",
-    "zen-space-bunny": "👑 Space Bunny 免费·最快",
-    "zen-ll-alpha": "LL Alpha 免费·256k",
-    "zen-nemotron-vl": "Nemotron VL 免费·1M",
-    "zen-longcat": "LongCat 免费·1M",
-    "zen-mimo": "MiMo V2.6 免费",
-    "zen-big-pickle": "Big Pickle 免费",
-    "deepseek":     "DeepSeek-V4 付费",
-    "glm4":         "GLM-4-Flash 免费",
-    "glm4-bridge":  "GLM-4-Flash 免费+读图",
-    "glm41v":       "GLM-4.1V 思考 免费",
-    "glm46v":       "GLM-4.6V 免费",
-    "kilo-bridge":  "Kilo 文本 免费+读图",
-    "kilo-fast":    "Kilo LFM2.5 免费",
-    "vision":       "读图 Vision 免费",
+    "zen-ds-flash": t("DS V4.1 Flash 免费·Zen"),
+    "zen-space-bunny": t("👑 Space Bunny 免费·最快"),
+    "zen-ll-alpha": t("LL Alpha 免费·256k"),
+    "zen-nemotron-vl": t("Nemotron VL 免费·1M"),
+    "zen-longcat": t("LongCat 免费·1M"),
+    "zen-mimo": t("MiMo V2.6 免费"),
+    "zen-big-pickle": t("Big Pickle 免费"),
+    "deepseek":     t("DeepSeek-V4 付费"),
+    "glm4":         t("GLM-4-Flash 免费"),
+    "glm4-bridge":  t("GLM-4-Flash 免费+读图"),
+    "glm41v":       t("GLM-4.1V 思考 免费"),
+    "glm46v":       t("GLM-4.6V 免费"),
+    "kilo-bridge":  t("Kilo 文本 免费+读图"),
+    "kilo-fast":    t("Kilo LFM2.5 免费"),
+    "vision":       t("读图 Vision 免费"),
 }
 
 
@@ -321,30 +542,30 @@ def _spawn(args, logfile):
 def ensure_bridge(timeout=90):
     """确保 zen_bridge 在 8787 可用；它会自己拉起 opencode serve(41234)。"""
     if http_ok(ZB_PORT, "/healthz", 1.5):
-        return "桥接已在运行", True
+        return t("桥接已在运行"), True
     _spawn([PY, ZB, "--port", str(ZB_PORT), "--sdk-port", str(ZB_SDK_PORT),
             "--auto-start"], "zen-bridge.log")
     if not wait_for(lambda: port_open(ZB_PORT), timeout):
-        return "桥接启动超时，见 ~/.claude/zen-bridge.log", False
+        return t("桥接启动超时，见 ~/.claude/zen-bridge.log"), False
     if wait_for(lambda: http_ok(ZB_PORT, "/healthz", 3), 30):
-        return "桥接已启动", True
-    return "桥接端口已开但健康检查未通过，见 ~/.claude/zen-bridge.log", False
+        return t("桥接已启动"), True
+    return t("桥接端口已开但健康检查未通过，见 ~/.claude/zen-bridge.log"), False
 
 
 def ensure_proxy(port, args, timeout=30):
     if port is None:
-        return "（直连，无需代理）", True
+        return t("（直连，无需代理）"), True
     if port_open(port):
-        return "代理已在运行", True
+        return t("代理已在运行"), True
     if args is None:
         # 外部工具装的模型：profile 在，但启动参数没登记在本脚本里，
         # 瞎起一个空 ccproxy 反而更糟——如实告诉用户，settings 切换仍然生效。
-        return ("本地代理 %d 未运行，且该模型无登记启动参数，未自动拉起；"
-                "请先手动启动对应代理" % port), False
+        return (t("本地代理 %d 未运行，且该模型无登记启动参数，未自动拉起；"
+                "请先手动启动对应代理") % port), False
     _spawn([PY, CC, "--port", str(port)] + args.split(), "ccproxy-%d.log" % port)
     if wait_for(lambda: port_open(port), timeout):
-        return "已启动代理", True
-    return "代理启动超时，见 ~/.claude/ccproxy-%d.log" % port, False
+        return t("已启动代理"), True
+    return t("代理启动超时，见 ~/.claude/ccproxy-%d.log") % port, False
 
 
 def current_model():
@@ -457,13 +678,29 @@ def switch(profile, port, args, bridge):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Claude 模型切换器")
+        self.title(t("Claude 模型切换器"))
         # 高度不再写死 915：小屏会顶到任务栏，底部「删除模型」区被切掉
         scr_h = self.winfo_screenheight()
         self.geometry("430x%d" % min(915, max(560, scr_h - 140)))
         self.minsize(400, 460)      # 允许拖动改大小，但别拖到看不清
         self.resizable(True, True)
-        tk.Label(self, text="点哪个模型，就切到哪个\n切完重启 Claude Code 即可",
+
+        # 语言选择：自动检测系统 UI 语言；手动改后写盘记住，并重启生效
+        lang_bar = tk.Frame(self, bg=self.cget("bg"))
+        lang_bar.pack(fill="x", padx=8, pady=(4, 2))
+        tk.Label(lang_bar, text=t("语言"), bg=self.cget("bg"), fg=SUB,
+                 font=("Microsoft YaHei", 9)).pack(side="left")
+        self.lang_combo = ttk.Combobox(lang_bar, state="readonly", width=12,
+                                       font=("Microsoft YaHei", 9))
+        self.lang_combo["values"] = [LANG_NAMES[c] for c in LANG_ORDER]
+        try:
+            self.lang_combo.current(LANG_ORDER.index(_current_lang))
+        except Exception:
+            self.lang_combo.current(0)
+        self.lang_combo.pack(side="left", padx=4)
+        self.lang_combo.bind("<<ComboboxSelected>>", self._on_lang)
+
+        tk.Label(self, text=t("点哪个模型，就切到哪个。切完重启 Claude Code 即可"),
                  font=("Microsoft YaHei", 11), pady=6).pack()
 
         self.status = tk.Label(self, text="", fg="green", font=("Microsoft YaHei", 9),
@@ -508,7 +745,7 @@ class App(tk.Tk):
         # ---- 删除模型（免费模型失效时一键移除入口）----
         sep = tk.Frame(self, height=2, bd=1, relief="sunken")
         sep.pack(fill="x", padx=26, pady=8)
-        tk.Label(self, text="删除模型（免费模型真删·付费归档可恢复）",
+        tk.Label(self, text=t("删除模型（免费模型真删·付费归档可恢复）"),
                  font=("Microsoft YaHei", 9), fg="gray").pack()
         # Combobox 独占一行全宽（放按钮旁边会被挤到 200px，文字全截断）
         self.del_combo = ttk.Combobox(self, state="readonly", height=12,
@@ -516,11 +753,11 @@ class App(tk.Tk):
         self.del_combo.pack(fill="x", padx=26, pady=4)
         btns = tk.Frame(self)
         btns.pack(fill="x", padx=26, pady=2)
-        tk.Button(btns, text="刷新列表", width=10,
+        tk.Button(btns, text=t("刷新列表"), width=10,
                   command=self.refresh).pack(side="left")
-        tk.Button(btns, text="＋ 新建模型", width=12,
+        tk.Button(btns, text=t("＋ 新建模型"), width=12,
                   command=self.on_new).pack(side="left", padx=6)
-        tk.Button(btns, text="删除所选模型", width=14, fg="darkred",
+        tk.Button(btns, text=t("删除所选模型"), width=14, fg="darkred",
                   command=self.on_delete).pack(side="right")
         # 多余高度由上面的可滚动 body 吸收（原来那个纯占位 Frame 已不需要）
 
@@ -531,6 +768,15 @@ class App(tk.Tk):
         self._auto_after = self.after(400, self._auto_connect)
         # 400ms 内关窗时先取消定时器，否则会报 invalid command name
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_lang(self, _e=None):
+        """手动切换语言：写盘记住，并重启本进程让所有文案立即生效。"""
+        name = self.lang_combo.get()
+        code = next((c for c in LANG_ORDER if LANG_NAMES[c] == name), None)
+        if code and code != _current_lang:
+            save_lang(code)
+            self.destroy()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _on_close(self):
         try:
@@ -634,7 +880,7 @@ class App(tk.Tk):
             self.buttons.append(b)
         if self.missing:
             self.missing_label.config(
-                text="未安装、已从列表隐藏：%s" % "、".join(self.missing))
+                text=t("未安装、已从列表隐藏：%s") % "、".join(self.missing))
             self.missing_label.pack(fill="x", padx=26, pady=(4, 0))
         else:
             self.missing_label.pack_forget()
@@ -710,15 +956,15 @@ class App(tk.Tk):
 
         name = re.sub(r"[^0-9A-Za-z]+", "-", mid).strip("-").lower()
         if not name:
-            return None, "模型 ID 里没有可用字符"
+            return None, t("模型 ID 里没有可用字符")
         dst = os.path.join(PROFILES_DIR, name + ".json")
         if os.path.isfile(dst):
-            return None, "已经有同名 profile：%s.json" % name
+            return None, t("已经有同名 profile：%s.json") % name
 
         prof = {
             "$schema": "https://json.schemastore.org/claude-code-settings.json",
-            "x_note": "由模型管理器新建（%s）"
-                      % ("Zen 桥接" if via_bridge else "Kilo 直连"),
+            "x_note": t("由模型管理器新建（%s）")
+                      % (t("Zen 桥接") if via_bridge else t("Kilo 直连")),
             "x_gateway_port": port,
             # 写进 profile，以后从列表切它时才能自动把代理拉起来
             "x_ccproxy_args": args.split(),
@@ -754,7 +1000,7 @@ class App(tk.Tk):
 
     def on_new(self):
         dlg = tk.Toplevel(self)
-        dlg.title("新建模型（Claude Code）")
+        dlg.title(t("新建模型（Claude Code）"))
         dlg.transient(self)
         dlg.geometry("780x620")
         dlg.resizable(True, True)
@@ -764,7 +1010,7 @@ class App(tk.Tk):
         # ---- 从目录里挑：列表带性能数据，代替原来那截显示不全的下拉 ----
         top = tk.Frame(dlg, bg="white")
         top.pack(fill="x", padx=18, pady=(14, 2))
-        tk.Label(top, text="从可用免费模型里选（点一行自动填到下面）",
+        tk.Label(top, text=t("从可用免费模型里选（点一行自动填到下面）"),
                  bg="white", font=("Microsoft YaHei", 10)).pack(side="left")
         lbl_scan = tk.Label(top, text="", bg="white", fg="gray",
                             font=("Microsoft YaHei", 8))
@@ -772,15 +1018,15 @@ class App(tk.Tk):
 
         bar = tk.Frame(dlg, bg="white")
         bar.pack(fill="x", padx=18, pady=(0, 4))
-        b_scan = tk.Button(bar, text="刷新目录", width=10,
+        b_scan = tk.Button(bar, text=t("刷新目录"), width=10,
                            font=("Microsoft YaHei", 9))
-        b_bench = tk.Button(bar, text="测速排序", width=10,
+        b_bench = tk.Button(bar, text=t("测速排序"), width=10,
                             font=("Microsoft YaHei", 9),
                             bg=ACCENT, fg="white", relief="flat",
                             disabledforeground="#edf2fe")
         b_scan.pack(side="left")
         b_bench.pack(side="left", padx=8)
-        tk.Label(bar, text="「测速排序」逐个量首字耗时（约半分钟），灰=未测 红=挂",
+        tk.Label(bar, text=t("「测速排序」逐个量首字耗时（约半分钟），灰=未测 红=挂"),
                  bg="white", fg="gray", font=("Microsoft YaHei", 8)).pack(
             side="left", padx=4)
 
@@ -793,11 +1039,11 @@ class App(tk.Tk):
         wrap.pack(fill="both", expand=True, padx=18, pady=(6, 0))
         tree = ttk.Treeview(wrap, columns=cols, show="headings", height=10)
         for cid, txt, w, anch in (
-                ("mid", "模型 ID", 330, "w"),
-                ("src", "来源", 52, "center"),
-                ("ctx", "上下文", 64, "e"),
-                ("inst", "已装", 48, "center"),
-                ("ttft", "首字实测", 78, "e")):
+                ("mid", t("模型 ID"), 330, "w"),
+                ("src", t("来源"), 52, "center"),
+                ("ctx", t("上下文"), 64, "e"),
+                ("inst", t("已装"), 48, "center"),
+                ("ttft", t("首字实测"), 78, "e")):
             tree.heading(cid, text=txt)
             tree.column(cid, width=w, anchor=anch)
         vsb = ttk.Scrollbar(wrap, orient="vertical", command=tree.yview)
@@ -820,7 +1066,7 @@ class App(tk.Tk):
                 if b is None:
                     ttft, tag = "—", "dim"
                 elif b["ttft"] is None:
-                    ttft, tag = "超时/挂", "fail"
+                    ttft, tag = t("超时/挂"), "fail"
                 else:
                     ttft, tag = "%.2fs" % b["ttft"], "ok"
                 tree.insert("", "end", iid=mid, tags=(tag,), values=(
@@ -840,13 +1086,13 @@ class App(tk.Tk):
                           cursor="arrow" if (scanning or benching) else "hand2")
             b_bench.config(state="disabled" if (scanning or benching) else "normal",
                            cursor="arrow" if (scanning or benching) else "hand2",
-                           text=("测速中 %d/%d" % (n, len(cands)) if benching
-                                 else "测速排序"))
-            b_scan.config(text="扫描中" if scanning else "刷新目录")
+                           text=(t("测速中 %d/%d", n, len(cands)) if benching
+                                 else t("测速排序")))
+            b_scan.config(text=t("扫描中") if scanning else t("刷新目录"))
 
         def scan():
             set_btns(scanning=True)
-            lbl_scan.config(text="正在拉 Kilo / Zen 目录…")
+            lbl_scan.config(text=t("正在拉 Kilo / Zen 目录…"))
 
             def work():
                 got = scan_candidates()
@@ -856,22 +1102,22 @@ class App(tk.Tk):
                     cands[:] = got
                     render()
                     if got:
-                        lbl_scan.config(text="共 %d 个" % len(got))
+                        lbl_scan.config(text=t("共 %d 个", len(got)))
                     else:
-                        lbl_scan.config(text="没扫到（网络问题？可手填）")
+                        lbl_scan.config(text=t("没扫到（网络问题？可手填）"))
                 dlg.after(0, done)
             threading.Thread(target=work, daemon=True).start()
         b_scan.config(command=scan)
 
         def do_bench():
             if not cands:
-                lbl_scan.config(text="目录还是空的，先「刷新目录」")
+                lbl_scan.config(text=t("目录还是空的，先「刷新目录」"))
                 return
             set_btns(benching=True, n=0)
 
             def prog(i, total, mid, ttft):
                 def step():
-                    b_bench.config(text="测速中 %d/%d" % (i, total))
+                    b_bench.config(text=t("测速中 %d/%d", i, total))
                 dlg.after(0, step)
 
             def work():
@@ -883,13 +1129,13 @@ class App(tk.Tk):
                     render()
                     ok = sum(1 for c in cands
                              if (bench.get(c[0]) or {}).get("ttft"))
-                    lbl_scan.config(text="测速完成 %d/%d 有响应，已按快慢排"
+                    lbl_scan.config(text=t("测速完成 %d/%d 有响应，已按快慢排")
                                     % (ok, len(cands)))
                 dlg.after(0, done)
             threading.Thread(target=work, daemon=True).start()
         b_bench.config(command=do_bench)
 
-        tk.Label(dlg, text="模型 ID（也可以直接手写）", bg="white",
+        tk.Label(dlg, text=t("模型 ID（也可以直接手写）"), bg="white",
                  anchor="w").pack(fill="x", padx=18, pady=(10, 2))
         e_id = tk.Entry(dlg, **f)
         e_id.pack(fill="x", padx=18)
@@ -900,12 +1146,12 @@ class App(tk.Tk):
 
         row = tk.Frame(dlg, bg="white")
         row.pack(fill="x", padx=18, pady=2)
-        tk.Label(row, text="本地代理端口", bg="white",
+        tk.Label(row, text=t("本地代理端口"), bg="white",
                  font=("Microsoft YaHei", 10)).pack(side="left")
         e_port = tk.Entry(row, width=8, **f)
         e_port.insert(0, str(self.next_port()))
         e_port.pack(side="left", padx=8)
-        tk.Label(row, text="（自动挑一个没占用的）", bg="white", fg="gray",
+        tk.Label(row, text=t("（自动挑一个没占用的）"), bg="white", fg="gray",
                  font=("Microsoft YaHei", 8)).pack(side="left")
 
         def upd(*_a):
@@ -913,25 +1159,25 @@ class App(tk.Tk):
             if not mid:
                 hint.config(text="")
             elif "/" in mid:
-                hint.config(text="→ 走 Kilo 网关直连（ID 带斜杠）")
+                hint.config(text=t("→ 走 Kilo 网关直连（ID 带斜杠）"))
             else:
-                hint.config(text="→ 走 Zen 免费，经本地桥接 8787")
+                hint.config(text=t("→ 走 Zen 免费，经本地桥接 8787"))
         e_id.bind("<KeyRelease>", upd)
         upd()
 
         def do_create():
             mid = e_id.get().strip()
             if not mid:
-                messagebox.showwarning("缺模型 ID", "先填模型 ID", parent=dlg)
+                messagebox.showwarning(t("缺模型 ID"), t("先填模型 ID"), parent=dlg)
                 return
             try:
                 port = int(e_port.get().strip())
             except ValueError:
-                messagebox.showwarning("端口不对", "端口要填数字", parent=dlg)
+                messagebox.showwarning(t("端口不对"), t("端口要填数字"), parent=dlg)
                 return
             name, args = self.create_profile(mid, port)
             if name is None:
-                messagebox.showerror("创建失败", args, parent=dlg)
+                messagebox.showerror(t("创建失败"), args, parent=dlg)
                 return
             dlg.destroy()
             self.refresh()
@@ -940,8 +1186,8 @@ class App(tk.Tk):
 
         bar = tk.Frame(dlg, bg="white")
         bar.pack(fill="x", padx=18, pady=16)
-        tk.Button(bar, text="取消", width=10, command=dlg.destroy).pack(side="right")
-        tk.Button(bar, text="创建并切换", width=14, bg=ACCENT, fg="white",
+        tk.Button(bar, text=t("取消"), width=10, command=dlg.destroy).pack(side="right")
+        tk.Button(bar, text=t("创建并切换"), width=14, bg=ACCENT, fg="white",
                   relief="flat", font=("Microsoft YaHei", 10),
                   command=do_create).pack(side="right", padx=8)
         e_id.focus_set()
@@ -952,30 +1198,31 @@ class App(tk.Tk):
         text = self.del_combo.get().strip()
         name = getattr(self, "_del_map", {}).get(text, text)
         if not name:
-            messagebox.showwarning("没有选中", "先在下拉框里选一个要删除的模型")
+            messagebox.showwarning(t("没有选中"), t("先在下拉框里选一个要删除的模型"))
             return
         try:
             prof = json.load(open(os.path.join(PROFILES_DIR, name + ".json"),
                                   encoding="utf-8"))
         except Exception as e:
-            messagebox.showerror("读不了这个 profile", str(e))
+            messagebox.showerror(t("读不了这个 profile"), str(e))
             return
         model = prof.get("model") or (prof.get("env") or {}).get("ANTHROPIC_MODEL", "?")
         is_free = bool(prof.get("x_free"))
         if is_free:
-            body = ("将【永久删除】免费模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n"
-                    "免费模型直接真删，不留 backup。\n确定删除？" % (text, name + ".json", model))
+            body = t("将【永久删除】免费模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n"
+                    "免费模型直接真删，不留 backup。\n确定删除？") \
+                    % (text, name + ".json", model)
         else:
-            body = ("将删除模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n"
+            body = t("将删除模型「%s」\nprofile 文件: %s\n上游模型 ID: %s\n\n"
                     "操作 = 把该 profile 移入\n~/.claude/backups/deleted/\n"
-                    "（不是硬删，需要时可捡回）\n\n确定删除？"
-                    % (text, name + ".json", model))
-        if not messagebox.askyesno("确认删除", body):
+                    "（不是硬删，需要时可捡回）\n\n确定删除？") \
+                    % (text, name + ".json", model)
+        if not messagebox.askyesno(t("确认删除"), body):
             return
         try:
             dest, real_delete = delete_profile(name, permanent=is_free)
         except Exception as e:
-            messagebox.showerror("删除失败", str(e))
+            messagebox.showerror(t("删除失败"), str(e))
             return
         # 如果删的是当前生效的 profile，提醒一句（settings.json 本身不动，
         # 只是从此没有 profile 与它对应，显示会变成"未知"）。
@@ -984,17 +1231,17 @@ class App(tk.Tk):
         pmodel = prof.get("model") or (prof.get("env") or {}).get("ANTHROPIC_MODEL", "")
         extra = ""
         if pbase == cur_base and pmodel == cur_model:
-            extra = ("\n\n注意：这是当前正在用的模型。settings.json 未改动，"
+            extra = t("\n\n注意：这是当前正在用的模型。settings.json 未改动，"
                      "但已无 profile 与它对应，建议再点一个别的模型。")
         self.refresh_del_list()
         self.refresh()
         if real_delete:
-            done_msg = "「%s」已永久删除（免费模型，无 backup）。" % text
+            done_msg = t("「%s」已永久删除（免费模型，无 backup）。") % text
         else:
-            done_msg = "「%s」已移除。\n归档到：%s（可恢复）" % (text, dest)
+            done_msg = t("「%s」已移除。\n归档到：%s（可恢复）") % (text, dest)
         messagebox.showinfo(
-            "已删除",
-            "%s%s\n\n重启 Claude Code 后，切换器列表不再显示它。"
+            t("已删除"),
+            t("%s%s\n\n重启 Claude Code 后，切换器列表不再显示它。")
             % (done_msg, extra))
 
     def refresh(self):
@@ -1007,7 +1254,7 @@ class App(tk.Tk):
             has_bridge = "vision-bridge" in s.get("mcpServers", {})
         except Exception:
             has_bridge = False
-        cur_disp = "未知"
+        cur_disp = t("未知")
         for disp, prof, port, args, bridge in self.models:
             try:
                 p = json.load(open(os.path.join(HOME, ".claude", "profiles", prof + ".json"), encoding="utf-8"))
@@ -1020,7 +1267,8 @@ class App(tk.Tk):
                 cur_disp = disp
                 break
         self.status.config(
-            text="当前：%s\n切换后重启 Claude Code；想保留上下文重启时加 --continue" % cur_disp,
+            text=t("当前：%s\n切换后重启 Claude Code；想保留上下文重启时加 --continue")
+                 % cur_disp,
             fg="blue")
         self.refresh_del_list()
 
@@ -1037,16 +1285,16 @@ class App(tk.Tk):
             if quiet:
                 return
             messagebox.showwarning(
-                "该模型已删除",
-                "「%s」的 profile 已被删除。\n点下方「刷新列表」或重启本工具。"
+                t("该模型已删除"),
+                t("「%s」的 profile 已被删除。\n点下方「刷新列表」或重启本工具。")
                 % disp)
             self.refresh_del_list()
             return
         self._task = {"disp": disp, "prof": prof, "port": port, "args": args,
                       "bridge": bridge, "quiet": quiet, "done": False,
                       "result": None}
-        tip = ("正在拉起 Zen 桥接（约 30 秒，含 opencode serve 冷启动）..."
-               if bridge else "正在切换...")
+        tip = (t("正在拉起 Zen 桥接（约 30 秒，含 opencode serve 冷启动）...")
+               if bridge else t("正在切换..."))
         self._set_busy(True, tip, "#b8860b")
         threading.Thread(target=self._worker, daemon=True).start()
         self.after(300, self._poll)
@@ -1056,7 +1304,7 @@ class App(tk.Tk):
         try:
             t["result"] = switch(t["prof"], t["port"], t["args"], t["bridge"])
         except Exception as e:
-            t["result"] = ("失败：%s" % e, False)
+            t["result"] = (t("失败：%s") % e, False)
         finally:
             t["done"] = True
 
@@ -1071,8 +1319,8 @@ class App(tk.Tk):
         self._set_busy(False)
         if t.get("quiet"):
             # 自动连接：只在状态栏显示，不弹框（每次开工具都弹一次很烦）
-            self._set_busy(False, ("已自动连上 %s（%s）" % (t["disp"], msg)) if ok
-                            else ("自动连接失败：%s" % msg),
+            self._set_busy(False, (t("已自动连上 %s（%s）") % (t["disp"], msg)) if ok
+                            else (t("自动连接失败：%s") % msg),
                             "green" if ok else "darkred")
             self._task = None
             self.refresh()
@@ -1086,13 +1334,13 @@ class App(tk.Tk):
             mid = ""
         extra = ""
         if t["bridge"] and ok and mid:
-            extra = ("\n\n桥接已就绪，WorkBuddy 侧也能用同一个模型：\n"
-                     "模型列表选 vendor=opencode 的 %s" % mid)
+            extra = (t("\n\n桥接已就绪，WorkBuddy 侧也能用同一个模型：\n"
+                     "模型列表选 vendor=opencode 的 %s") % mid)
         messagebox.showinfo(
-            "已切换" if ok else "部分失败",
-            "已切换到：%s\n%s%s\n\n重启 Claude Code 后生效。\n"
+            t("已切换") if ok else t("部分失败"),
+            t("已切换到：%s\n%s%s\n\n重启 Claude Code 后生效。\n"
             "想接着之前的对话继续：重启时用 claude --continue\n"
-            "（换模型不会丢会话，历史都在 ~/.claude/projects/）"
+            "（换模型不会丢会话，历史都在 ~/.claude/projects/）")
             % (t["disp"], msg, extra))
         self._task = None
         self.refresh()
@@ -1107,6 +1355,6 @@ if __name__ == "__main__":
         with open(log, "a", encoding="utf-8") as f:
             f.write(traceback.format_exc())
         try:
-            messagebox.showerror("切换器出错", "详情见 " + log)
+            messagebox.showerror(t("切换器出错"), "详情见 " + log)
         except Exception:
             pass
