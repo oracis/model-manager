@@ -44,6 +44,13 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import messagebox, ttk
 
+# 版本号：唯一来源是仓库根目录的 version.py；CI 出包（尤其 release）会重写它。
+# 本地未打包 / 导入失败时回落到 "dev"。
+try:
+    from version import __version__ as APP_VERSION
+except Exception:
+    APP_VERSION = "dev"
+
 HOME = os.path.expanduser("~")
 PY = r"C:\Users\DELL\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 CC = r"C:\Users\DELL\.workbuddy\skills\claude-code-third-party-model\scripts\ccproxy.py"
@@ -678,7 +685,7 @@ def switch(profile, port, args, bridge):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(t("Claude 模型切换器"))
+        self.title(t("Claude 模型切换器") + " v" + APP_VERSION)
         # 高度不再写死 915：小屏会顶到任务栏，底部「删除模型」区被切掉
         scr_h = self.winfo_screenheight()
         self.geometry("430x%d" % min(915, max(560, scr_h - 140)))
@@ -706,6 +713,9 @@ class App(tk.Tk):
         self.status = tk.Label(self, text="", fg="green", font=("Microsoft YaHei", 9),
                                wraplength=390, justify="left", height=3)
         self.status.pack(pady=4)
+        self.ver = tk.Label(self, text="v" + APP_VERSION, font=("Microsoft YaHei", 9),
+                            bg=BG, fg=SUB)
+        self.ver.pack(pady=2)
 
         # ---- 模型按钮区：可滚动（模型再多也只是列表变长，滚轮/滚动条都能看全）----
         body = tk.Frame(self)

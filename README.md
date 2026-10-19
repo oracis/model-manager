@@ -51,6 +51,16 @@ build_exe.cmd
 
 仓库含 `.github/workflows/build-exe.yml`：push 到 `main` 触发 `windows-latest` 自动打包，产物作为 **Actions Artifact** 可直接下载；发布 **GitHub Release** 时，两个 exe 会自动挂到该 Release 附件上（无需本机出包）。
 
+## 版本号管理
+
+版本号唯一来源是仓库根目录的 **`version.py`**（`__version__ = "1.0.0"`）。两个 GUI 的标题栏和状态栏都会显示 `vX.Y.Z`。
+
+- **发布 Release**：打 tag（如 `v1.2.0`），CI 的「Stamp version」步骤会把 tag 去 `v` 后写进 `version.py` 再打包，所以发版 exe 自带精确版本号。
+- **push 到 main**：CI 在现有版本后追加 `-dev`（如 `1.0.0-dev`），区分开发构建。
+- 本地 `build_exe.cmd` 直接用 `version.py` 里的当前值，无需手动改。
+
+改版本只需动 `version.py`（或打 tag），不用改两个 `.pyw`。
+
 ## 候选模型从哪来
 
 「新建模型」的候选来自两家公开、免 key 的模型目录：

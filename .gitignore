@@ -10,6 +10,7 @@
 !mm.ico
 !README.md
 !.gitignore
+!version.py
 !.github/
 !.github/**
 

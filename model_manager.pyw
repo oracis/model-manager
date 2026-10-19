@@ -23,6 +23,13 @@ import shutil
 import socket
 import subprocess
 import sys
+
+# 版本号：唯一来源是仓库根目录的 version.py；CI 出包（尤其 release）会重写它。
+# 本地未打包 / 导入失败时回落到 "dev"。
+try:
+    from version import __version__ as APP_VERSION
+except Exception:
+    APP_VERSION = "dev"
 import threading
 import time
 import tkinter as tk
@@ -511,6 +518,9 @@ class FreeLLMFrame(tk.Frame):
         self.status = tk.Label(bar, text=t("就绪"), font=("Microsoft YaHei UI", 9),
                                bg=BG, fg=SUB)
         self.status.pack(side="right")
+        self.ver = tk.Label(bar, text="v" + APP_VERSION, font=("Microsoft YaHei UI", 9),
+                            bg=BG, fg=SUB)
+        self.ver.pack(side="left")
 
         # 日志
         self.log = tk.Text(self, height=12, relief="flat", bg="#f6f8fa", fg=FG,
@@ -1734,7 +1744,7 @@ class ClaudeFrame(tk.Frame):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(t("模型管理器"))
+        self.title(t("模型管理器") + " v" + APP_VERSION)
         scr_w = self.winfo_screenwidth()
         scr_h = self.winfo_screenheight()
         w = min(900, max(760, scr_w - 200))
