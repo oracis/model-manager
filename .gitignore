@@ -10,6 +10,8 @@
 !mm.ico
 !README.md
 !.gitignore
+!.github/
+!.github/**
 
 # 构建产物不入库（可用 build_exe.cmd 重新生成）
 dist/
