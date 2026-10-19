@@ -75,6 +75,11 @@ LANG_ORDER = ["zh", "en"]
 
 _EN = {
     "语言": "Language",
+    "帮助": "Help",
+    "关于": "About",
+    "本机版本：": "Local version: ",
+    "源码与更新：": "Source & updates: ",
+    "Claude Code 模型切换器：点哪个模型就切到哪个 profile。": "Claude Code model switcher: click a model to switch to its profile.",
     "Claude 模型切换器": "Claude Model Switcher",
     "WorkBuddy 免费模型": "WorkBuddy Free Models",
     "Claude Code 模型": "Claude Code Models",
@@ -692,6 +697,13 @@ class App(tk.Tk):
         self.minsize(400, 460)      # 允许拖动改大小，但别拖到看不清
         self.resizable(True, True)
 
+        # 菜单栏：帮助 -> 关于
+        menubar = tk.Menu(self)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label=t("关于"), command=self._show_about)
+        menubar.add_cascade(label=t("帮助"), menu=help_menu)
+        self.configure(menu=menubar)
+
         # 语言选择：自动检测系统 UI 语言；手动改后写盘记住，并重启生效
         lang_bar = tk.Frame(self, bg=self.cget("bg"))
         lang_bar.pack(fill="x", padx=8, pady=(4, 2))
@@ -794,6 +806,43 @@ class App(tk.Tk):
         except Exception:
             pass
         self.destroy()
+
+    def _show_about(self):
+        """关于对话框：显示应用名、版本、简介与源码地址。"""
+        dlg = tk.Toplevel(self)
+        dlg.title(t("关于"))
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        try:
+            dlg.transient(self)
+            dlg.grab_set()
+        except Exception:
+            pass
+
+        tk.Label(dlg, text=t("Claude 模型切换器") + "  v" + APP_VERSION,
+                 font=("Microsoft YaHei", 14, "bold"), bg=BG, fg=FG).pack(pady=(16, 4))
+        tk.Label(dlg, text=t("Claude Code 模型切换器：点哪个模型就切到哪个 profile。"),
+                 font=("Microsoft YaHei", 10), bg=BG, fg=SUB, wraplength=360,
+                 justify="left").pack(padx=18, pady=(2, 10))
+
+        info = tk.Frame(dlg, bg=BG)
+        info.pack(fill="x", padx=18)
+        tk.Label(info, text=t("本机版本："), bg=BG, fg=SUB,
+                 font=("Microsoft YaHei", 10), anchor="w").grid(row=0, column=0, sticky="w", pady=2)
+        tk.Label(info, text=APP_VERSION, bg=BG, fg=FG,
+                 font=("Microsoft YaHei", 10), anchor="w").grid(row=0, column=1, sticky="w", pady=2, padx=(6, 0))
+        tk.Label(info, text=t("源码与更新："), bg=BG, fg=SUB,
+                 font=("Microsoft YaHei", 10), anchor="w").grid(row=1, column=0, sticky="w", pady=2)
+        tk.Label(info, text="github.com/oracis/model-manager",
+                 bg=BG, fg=ACCENT, font=("Microsoft YaHei", 10), anchor="w").grid(row=1, column=1, sticky="w", pady=2, padx=(6, 0))
+
+        tk.Button(dlg, text=t("关闭"), command=dlg.destroy,
+                  font=("Microsoft YaHei", 10), relief="flat", cursor="hand2",
+                  bg="#eef0f3", fg=FG, padx=18, pady=6).pack(pady=(12, 16))
+        dlg.bind("<Escape>", lambda _e: dlg.destroy())
+        dlg.update_idletasks()
+        dlg.geometry("+%d+%d" % ((self.winfo_rootx() + max(0, (self.winfo_width() - dlg.winfo_width()) // 2)),
+                                (self.winfo_rooty() + max(0, (self.winfo_height() - dlg.winfo_height()) // 2))))
 
     # ---------- 滚动区 ----------
     def _on_list_configure(self, _e=None):
