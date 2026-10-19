@@ -1,24 +1,48 @@
 @echo off
 chcp 65001 >nul
-rem 重新打包「模型管理器.exe」——改完 model_manager.pyw 后双击本文件即可
-cd /d "C:\Users\DELL\.local\bin"
+rem 一键打包：把两个 .pyw 都打成单文件 exe，并复制到桌面。
+rem 依赖：Python 3.13 + pip install pyinstaller
+rem   改完源码后双击本文件即可；路径全部相对本脚本所在目录，clone 到别处也能用。
 
-"C:\Python313\python.exe" -m PyInstaller --noconfirm --onefile --windowed ^
+set "BASE=%~dp0"
+cd /d "%BASE%"
+
+rem 自动选择 python：优先 PATH 里的 python，否则退回本机固定路径
+where python >nul 2>nul
+if %errorlevel%==0 (set "PY=python") else (set "PY=C:\Python313\python.exe")
+
+echo [1/2] 打包 model_manager.exe ...
+"%PY%" -m PyInstaller --noconfirm --onefile --windowed ^
   --name model_manager ^
-  --icon "C:\Users\DELL\.local\bin\mm.ico" ^
-  --distpath "C:\Users\DELL\.local\bin\dist" ^
-  --workpath "C:\Users\DELL\.local\bin\build_tmp" ^
-  --specpath "C:\Users\DELL\.local\bin\build_tmp" ^
-  "C:\Users\DELL\.local\bin\model_manager.pyw"
-
+  --icon "%BASE%mm.ico" ^
+  --distpath "%BASE%dist" ^
+  --workpath "%BASE%build_tmp" ^
+  --specpath "%BASE%build_tmp" ^
+  "%BASE%model_manager.pyw"
 if errorlevel 1 (
     echo.
-    echo [失败] 打包出错，看上面的输出
+    echo [失败] model_manager 打包出错
     pause
     exit /b 1
 )
 
-copy /y "C:\Users\DELL\.local\bin\dist\model_manager.exe" "C:\Users\DELL\Desktop\模型管理器.exe" >nul
+echo [2/2] 打包 claude_switcher.exe ...
+"%PY%" -m PyInstaller --noconfirm --onefile --windowed ^
+  --name claude_switcher ^
+  --icon "%BASE%mm.ico" ^
+  --distpath "%BASE%dist" ^
+  --workpath "%BASE%build_tmp" ^
+  --specpath "%BASE%build_tmp" ^
+  "%BASE%claude_model_switcher.pyw"
+if errorlevel 1 (
+    echo.
+    echo [失败] claude_switcher 打包出错
+    pause
+    exit /b 1
+)
+
+copy /y "%BASE%dist\model_manager.exe" "%USERPROFILE%\Desktop\模型管理器.exe" >nul
+copy /y "%BASE%dist\claude_switcher.exe" "%USERPROFILE%\Desktop\Claude 模型切换器.exe" >nul
 echo.
-echo [完成] 已更新桌面「模型管理器.exe」
+echo [完成] 已生成 dist\model_manager.exe 与 dist\claude_switcher.exe，并复制到桌面
 pause

@@ -28,19 +28,24 @@ WorkBuddy 与 Claude Code 是**两套独立配置**，唯一交集是共享 8787
 | `build_exe.cmd` | 一键用 PyInstaller 打包成 `模型管理器.exe` |
 | `mm.ico` | 图标 |
 
-## 打包成 exe
+## 下载预编译 exe（免环境）
+
+不想装 Python/PyInstaller 的，直接到 **[Releases](https://github.com/oracis/model-manager/releases)** 下载：
+
+- `模型管理器.exe`：合并版（WorkBuddy 免费模型 + Claude Code 模型 两个 Tab）
+- `Claude 模型切换器.exe`：仅 Claude Code 模型切换
+
+两个都是单文件、Windows 10/11 x64 双击即用，无需安装任何依赖。
+
+## 自己打包（clone 后）
+
+依赖：Python 3.13 + `pip install pyinstaller`。路径全部相对脚本目录，clone 到别处也能用。
 
 ```bat
 build_exe.cmd
 ```
 
-产物在 `dist/model_manager.exe`，复制到桌面双击即可（无控制台窗口）。注意 frozen 下 `sys.executable` 指向 exe 自己，脚本内部通过 `_host_python()` 回落到系统 `C:\Python313\python.exe` 来跑 `install_free_llms.py`。
-
-`claude_model_switcher.pyw` 也可单独打包成 `Claude 模型切换器.exe`（同样 `--onefile --windowed`），打包命令：
-
-```bat
-python -m PyInstaller --noconfirm --onefile --windowed --name claude_switcher --icon mm.ico --distpath dist claude_model_switcher.pyw
-```
+一键生成 `dist\model_manager.exe` 与 `dist\claude_switcher.exe` 并复制到桌面（无控制台窗口）。注意 frozen 下 `sys.executable` 指向 exe 自己，脚本内部通过 `_host_python()` 回落到系统 `C:\Python313\python.exe` 来跑 `install_free_llms.py`。
 
 ## 候选模型从哪来
 
